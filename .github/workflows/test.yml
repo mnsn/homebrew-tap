@@ -1,0 +1,84 @@
+name: Test
+
+# Checks the cask the way Homebrew does, then installs and removes it on a clean Mac, on each macOS that BriefBar
+# supports.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_ANALYTICS: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Homebrew reads this checkout as the tap mnsn/tap, not the published one.
+      - name: Tap this checkout
+        run: |
+          TAP="$(brew --repository)/Library/Taps/mnsn/homebrew-tap"
+          mkdir -p "$(dirname "$TAP")"
+          rm -rf "$TAP"
+          ln -s "$GITHUB_WORKSPACE" "$TAP"
+          brew --version
+
+      - name: Check the style
+        run: brew style mnsn/tap
+
+      # Runners share their IP addresses, so GitHub's API needs a token to stay under its rate limit.
+      - name: Audit the cask
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: brew audit --cask --strict --online mnsn/tap/briefbar
+
+      - name: Check for a newer release
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: brew livecheck --cask mnsn/tap/briefbar
+
+      - name: Install the cask
+        run: brew install --cask mnsn/tap/briefbar
+
+      # Gatekeeper still checks the app the first time it opens: the cask doesn't remove its quarantine.
+      - name: Check the installed app
+        run: |
+          APP=/Applications/BriefBar.app
+          VERSION="$(brew info --cask --json=v2 mnsn/tap/briefbar | jq -r '.casks[0].version')"
+          INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          if [[ "$INSTALLED" != "$VERSION" ]]; then
+            echo "::error::The cask is for $VERSION, but it installed $INSTALLED."
+            exit 1
+          fi
+          codesign --verify --deep --strict "$APP"
+          xattr -p com.apple.quarantine "$APP"
+          echo "Installed BriefBar $INSTALLED"
+
+      - name: Uninstall the cask
+        run: |
+          brew uninstall --cask --zap mnsn/tap/briefbar
+          if [[ -e /Applications/BriefBar.app ]]; then
+            echo "::error::brew uninstall left /Applications/BriefBar.app behind."
+            exit 1
+          fi
