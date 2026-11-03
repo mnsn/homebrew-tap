@@ -15,7 +15,7 @@ cask "briefbar" do
 
   auto_updates true
   depends_on arch: :arm64
-  depends_on macos: :sequoia
+  depends_on macos: :tahoe
 
   app "BriefBar.app"
 
