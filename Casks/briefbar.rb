@@ -1,6 +1,6 @@
 cask "briefbar" do
-  version "0.23.0"
-  sha256 "e79791981b8a9618134f0e38a2b40dc3a24965020abefe51709b198665b2f286"
+  version "0.24.0"
+  sha256 "3fb4a68fabbd64255373f03d825984c7e59e04e6f9789a130cd35e266123330a"
 
   url "https://github.com/mnsn/brief-bar/releases/download/v#{version}/BriefBar.zip"
   name "BriefBar"
